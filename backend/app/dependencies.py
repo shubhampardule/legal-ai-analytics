@@ -61,7 +61,7 @@ async def lifespan(app):
     case_lookup = CaseLookupService()
     prediction = PredictionService()
     explanation = ExplanationService(prediction)
-    similarity = SimilarityService()
+    similarity = SimilarityService(prediction_service=prediction)
     chat_rag = ChatRagService(prediction)
     analysis_cache = AnalysisCacheService()
     app.state.services = ApiServices(

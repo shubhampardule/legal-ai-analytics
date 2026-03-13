@@ -19,7 +19,8 @@ from .config import (
     LONG_DOCUMENT_CHAR_THRESHOLD,
     MAX_INPUT_CHARS,
     MAX_TOP_K,
-    MODEL_MAX_TEXT_CHARS,
+    PREDICTION_MAX_CHUNKS,
+    PREDICTION_MAX_CHUNK_CHARS,
     PREDICTION_MODEL_NAME,
     SERVICE_NAME,
     SIMILARITY_DISCLAIMER,
@@ -251,7 +252,8 @@ def collect_warnings(input_context: dict[str, object], prediction) -> list[str]:
     warnings: list[str] = []
     if prediction.truncated_for_model:
         warnings.append(
-            f"Prediction and explanation use only the first {MODEL_MAX_TEXT_CHARS} cleaned characters."
+            "Prediction and explanation used a truncated text window "
+            f"(up to {PREDICTION_MAX_CHUNKS} chunks × {PREDICTION_MAX_CHUNK_CHARS} chars)."
         )
     if bool(input_context.get("needs_chunking")):
         warnings.append(

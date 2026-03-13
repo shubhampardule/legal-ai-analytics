@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import re
 import unicodedata
+
+from transformers import pipeline
+
+from ..config import (
+    AI_JUDGE_EXTRACTION_ENABLED,
+    AI_JUDGE_MAX_CONTEXTS,
+    AI_JUDGE_MIN_CONFIDENCE,
+    AI_JUDGE_NER_MODEL,
+)
 
 
 SIGNATURE_NOT_VERIFIED_RE = re.compile(r"Signature Not Verified", re.IGNORECASE)
@@ -73,6 +83,7 @@ JUDGE_RE = re.compile(
     r"\b(?:hon'?ble\s+)?(?:mr\.?\s+|mrs\.?\s+|ms\.?\s+|dr\.?\s+)?(?:justice|judge|c\.?j\.?|j\.?|jj\.?)\s+[a-z][a-z.\-]*(?:\s+[a-z][a-z.\-]*){0,2}",
     re.IGNORECASE,
 )
+JUDGE_CONTEXT_KEYWORD_RE = re.compile(r"\b(?:justice|judge|bench|coram|hon'?ble|c\.?j\.?|j\.?|jj\.?)\b", re.IGNORECASE)
 
 JUDGE_TITLE_WORDS = {
     "honble", "hon'ble", "mr", "mrs", "ms", "dr", "justice", "judge", "cj", "j", "jj",
@@ -83,6 +94,41 @@ JUDGE_STOPWORDS = {
     "would", "be", "done", "him", "her", "them", "union", "state", "petitioner", "respondent",
     "versus", "vs", "v",
 }
+
+
+@lru_cache(maxsize=1)
+def _get_judge_ner_pipeline():
+    if not AI_JUDGE_EXTRACTION_ENABLED:
+        return None
+    try:
+        return pipeline(
+            "token-classification",
+            model=AI_JUDGE_NER_MODEL,
+            tokenizer=AI_JUDGE_NER_MODEL,
+            aggregation_strategy="simple",
+        )
+    except Exception:
+        return None
+
+
+def _normalize_person_name(raw: str) -> str | None:
+    candidate = re.sub(r"\s+", " ", (raw or "").replace("##", " ").replace("-", " ")).strip(" ,;:.()[]{}\t\n\r")
+    if not candidate:
+        return None
+
+    tokens = [tok for tok in candidate.split() if tok]
+    if not (2 <= len(tokens) <= 4):
+        return None
+
+    for tok in tokens:
+        lowered = tok.lower().strip(".,")
+        if lowered in JUDGE_STOPWORDS:
+            return None
+        if not re.fullmatch(r"[A-Za-z][A-Za-z.\-]*", tok):
+            return None
+
+    cleaned = " ".join(tokens)
+    return cleaned.title()
 
 
 def _clean_judge_candidate(raw: str) -> str | None:
@@ -131,6 +177,59 @@ def _clean_judge_candidate(raw: str) -> str | None:
 
     return cleaned
 
+
+def _extract_judges_with_ai(text: str) -> list[str]:
+    ner = _get_judge_ner_pipeline()
+    if ner is None:
+        return []
+
+    contexts: list[str] = []
+    for sentence in extract_sentences(text):
+        snippet = str(sentence.get("text", ""))
+        if not snippet:
+            continue
+        if not JUDGE_CONTEXT_KEYWORD_RE.search(snippet):
+            continue
+        contexts.append(snippet[:500])
+        if len(contexts) >= AI_JUDGE_MAX_CONTEXTS:
+            break
+
+    if not contexts:
+        return []
+
+    try:
+        outputs = ner(contexts)
+    except Exception:
+        return []
+
+    if isinstance(outputs, list) and outputs and isinstance(outputs[0], dict):
+        outputs = [outputs]
+
+    judges: list[str] = []
+    for entities in outputs or []:
+        if not isinstance(entities, list):
+            continue
+        for entity in entities:
+            label = str(entity.get("entity_group") or entity.get("entity") or "").upper()
+            score = float(entity.get("score", 0.0))
+            if "PER" not in label or score < AI_JUDGE_MIN_CONFIDENCE:
+                continue
+
+            normalized = _normalize_person_name(str(entity.get("word", "")))
+            if not normalized:
+                continue
+            judges.append(f"Justice {normalized}")
+
+    seen = set()
+    deduped: list[str] = []
+    for judge in judges:
+        key = judge.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(judge)
+    return deduped
+
 def extract_legal_entities(text: str) -> dict[str, list[str]]:
     statutes = []
 
@@ -150,11 +249,14 @@ def extract_legal_entities(text: str) -> dict[str, list[str]]:
         if len(res.split()) > 10: continue
         statutes.append(res)
 
-    judges = []
+    judges_regex = []
     for match in JUDGE_RE.finditer(text):
         cleaned = _clean_judge_candidate(match.group(0))
         if cleaned:
-            judges.append(cleaned)
+            judges_regex.append(cleaned)
+
+    judges_ai = _extract_judges_with_ai(text)
+    judges = judges_ai if judges_ai else judges_regex
 
     def dedup(seq):
         seen = set()

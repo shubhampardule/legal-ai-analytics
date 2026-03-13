@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from pathlib import Path
+from typing import Any
 
 import faiss
 import numpy as np
@@ -16,7 +17,11 @@ from ..config import (
     SIMILARITY_DISCLAIMER,
     SIMILARITY_INDEX_DIR,
     SIMILARITY_MODEL_NAME,
+    SIMILARITY_RERANK_MAX_CANDIDATES,
+    SIMILARITY_RERANK_POOL_MULTIPLIER,
+    SIMILARITY_RERANK_WEIGHT,
 )
+from .prediction import PredictionService
 
 
 SEGMENT_HEAD_CHARS = 4000
@@ -47,6 +52,7 @@ class SimilarityService:
         self,
         index_dir: Path = SIMILARITY_INDEX_DIR,
         retrieval_embedding_dir: Path = RETRIEVAL_EMBEDDING_DIR,
+        prediction_service: PredictionService | None = None,
     ) -> None:
         self.index = faiss.read_index(str(index_dir / "ildc_cases_ip.index"))
         self.metadata = pd.read_parquet(retrieval_embedding_dir / "case_metadata.parquet")
@@ -63,6 +69,7 @@ class SimilarityService:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.model.eval()
+        self.prediction_service = prediction_service
 
     def search_by_case_id(
         self,
@@ -92,6 +99,7 @@ class SimilarityService:
         }
         return {
             "embedding_model": SIMILARITY_MODEL_NAME,
+            "ranking_method": "faiss_cosine_plus_deberta_rerank",
             "index_type": "faiss.IndexFlatIP",
             "similarity_metric": "cosine_similarity",
             "top_k": top_k,
@@ -105,6 +113,7 @@ class SimilarityService:
             "results": self._search(
                 query_vector,
                 top_k,
+                query_text=str(row.get("preview_text", "")),
                 exclude_row=query_row,
                 outcome=outcome,
                 year_from=year_from,
@@ -134,6 +143,7 @@ class SimilarityService:
         }
         return {
             "embedding_model": SIMILARITY_MODEL_NAME,
+            "ranking_method": "faiss_cosine_plus_deberta_rerank",
             "index_type": "faiss.IndexFlatIP",
             "similarity_metric": "cosine_similarity",
             "top_k": top_k,
@@ -147,6 +157,7 @@ class SimilarityService:
             "results": self._search(
                 query_vector,
                 top_k,
+                query_text=clean_text,
                 exclude_row=None,
                 outcome=outcome,
                 year_from=year_from,
@@ -158,18 +169,22 @@ class SimilarityService:
         self,
         query_vector: np.ndarray,
         top_k: int,
+        query_text: str,
         exclude_row: int | None,
         outcome: str | None = None,
         year_from: int | None = None,
         year_to: int | None = None,
     ) -> list[dict[str, object]]:
-        search_k = min(len(self.metadata), max(top_k * 10, top_k + 1))
+        search_k = min(
+            len(self.metadata),
+            max(top_k * 10, top_k * SIMILARITY_RERANK_POOL_MULTIPLIER, top_k + 1),
+        )
         scores, indices = self.index.search(
             np.ascontiguousarray(query_vector.reshape(1, -1).astype(np.float32)),
             search_k,
         )
 
-        results: list[dict[str, object]] = []
+        candidates: list[dict[str, Any]] = []
         for score, row_idx in zip(scores[0], indices[0]):
             if row_idx < 0:
                 continue
@@ -183,23 +198,74 @@ class SimilarityService:
                 continue
             if year_to is not None and case_year > int(year_to):
                 continue
-            results.append(
+            candidates.append(
                 {
-                    "rank": len(results) + 1,
                     "case_id": meta["id"],
                     "split": meta["split"],
                     "label": int(meta["label"]),
                     "label_name": meta["label_name"],
                     "year": case_year,
-                    "similarity_score": round(float(score), 6),
+                    "preview_text": meta["preview_text"],
                     "clean_char_length": int(meta["clean_char_length"]),
                     "needs_chunking": bool(meta["needs_chunking"]),
-                    "preview_text": meta["preview_text"],
+                    "embedding_similarity_score": round(float(score), 6),
                 }
             )
-            if len(results) >= top_k:
+            if len(candidates) >= SIMILARITY_RERANK_MAX_CANDIDATES:
                 break
+
+        reranked = self._rerank_candidates(
+            query_text=query_text,
+            candidates=candidates,
+        )
+
+        results: list[dict[str, object]] = []
+        for item in reranked[:top_k]:
+            results.append(
+                {
+                    "rank": len(results) + 1,
+                    "case_id": item["case_id"],
+                    "split": item["split"],
+                    "label": int(item["label"]),
+                    "label_name": item["label_name"],
+                    "year": int(item["year"]),
+                    "similarity_score": round(float(item["reranked_score"]), 6),
+                    "embedding_similarity_score": round(float(item["embedding_similarity_score"]), 6),
+                    "rerank_relevance_score": round(float(item["rerank_relevance_score"]), 6),
+                    "clean_char_length": int(item["clean_char_length"]),
+                    "needs_chunking": bool(item["needs_chunking"]),
+                    "preview_text": item["preview_text"],
+                }
+            )
         return results
+
+    def _rerank_candidates(
+        self,
+        query_text: str,
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not candidates:
+            return []
+
+        relevance_scores = [0.0 for _ in candidates]
+        if self.prediction_service is not None:
+            candidate_texts = [str(item.get("preview_text", "")) for item in candidates]
+            relevance_scores = self.prediction_service.score_relevance_pairs(
+                query_text=query_text,
+                candidate_texts=candidate_texts,
+            )
+
+        bounded_weight = max(0.0, min(1.0, SIMILARITY_RERANK_WEIGHT))
+        for idx, item in enumerate(candidates):
+            raw_embedding = float(item.get("embedding_similarity_score", 0.0))
+            embedding_unit = max(0.0, min(1.0, (raw_embedding + 1.0) / 2.0))
+            relevance = float(relevance_scores[idx]) if idx < len(relevance_scores) else 0.0
+            item["rerank_relevance_score"] = relevance
+            item["reranked_score"] = (
+                bounded_weight * relevance + (1.0 - bounded_weight) * embedding_unit
+            )
+
+        return sorted(candidates, key=lambda item: float(item["reranked_score"]), reverse=True)
 
     def _encode_text(self, clean_text: str) -> np.ndarray:
         segments = make_segments(clean_text)

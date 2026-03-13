@@ -70,8 +70,8 @@ This README gives complete commands for both options.
 - Pydantic
 
 ### ML / NLP
-- TF-IDF + Logistic Regression (prediction)
-- Sentence Transformers (MiniLM)
+- DeBERTa v3 zero-shot classifier (prediction)
+- Sentence Transformers (MiniLM retrieval) + DeBERTa reranking
 - FAISS (similarity index)
 - NumPy, Pandas, PyArrow, scikit-learn
 
@@ -101,7 +101,6 @@ data/                    raw + processed dataset files
 artifacts/               trained models, embeddings, FAISS index, reports
 requirements.txt         Python dependencies
 improvement.md           roadmap + feature status
-PROJECT_REPORT.md        project report
 ```
 
 ---
@@ -155,8 +154,9 @@ Extract shared bundle so these paths exist:
 - `data/processed/ildc/dev.parquet`
 - `data/processed/ildc/test.parquet`
 - `data/splits/ildc/*.txt`
-- `artifacts/baseline/tfidf_logreg/model.joblib`
-- `artifacts/baseline/tfidf_logreg/vectorizer.joblib`
+- `artifacts/advanced/minilm_embedding_logreg/train_embeddings.npy`
+- `artifacts/advanced/minilm_embedding_logreg/dev_embeddings.npy`
+- `artifacts/advanced/minilm_embedding_logreg/test_embeddings.npy`
 - `artifacts/retrieval_case_embeddings/case_embeddings.npy`
 - `artifacts/retrieval_case_embeddings/case_metadata.parquet`
 - `artifacts/similarity_index/ildc_cases_ip.index`
@@ -210,7 +210,6 @@ Run from repo root:
 ```powershell
 python scripts/preprocess_ildc.py
 python scripts/save_ildc_splits.py
-python scripts/train_baseline_tfidf_logreg.py
 python scripts/train_advanced_minilm_embedding.py
 python scripts/build_case_embedding_corpus.py
 python scripts/build_similarity_index.py
@@ -220,16 +219,18 @@ python scripts/build_similarity_index.py
 
 - `train_advanced_minilm_embedding.py` is the slowest step (GPU highly recommended).
 - First MiniLM run may download model files if not cached.
-- Prediction endpoint uses baseline TF-IDF model.
-- Similarity search uses MiniLM embeddings + FAISS index.
+- First DeBERTa run may download model files if not cached.
+- Prediction endpoint uses DeBERTa zero-shot classification.
+- Similarity search uses MiniLM embeddings + FAISS candidate retrieval + DeBERTa reranking.
 
 ## 4) Quick artifact sanity check (manual)
 
 Confirm these files were created:
 
 ```text
-artifacts/baseline/tfidf_logreg/model.joblib
-artifacts/baseline/tfidf_logreg/vectorizer.joblib
+artifacts/advanced/minilm_embedding_logreg/train_embeddings.npy
+artifacts/advanced/minilm_embedding_logreg/dev_embeddings.npy
+artifacts/advanced/minilm_embedding_logreg/test_embeddings.npy
 artifacts/retrieval_case_embeddings/case_embeddings.npy
 artifacts/retrieval_case_embeddings/case_metadata.parquet
 artifacts/similarity_index/ildc_cases_ip.index
@@ -330,7 +331,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 
 Usually missing artifacts. Recheck:
 
-- baseline model/vectorizer files
+- advanced MiniLM embedding files
 - retrieval embeddings + metadata
 - FAISS index file
 

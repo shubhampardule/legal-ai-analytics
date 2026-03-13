@@ -9,4 +9,5 @@ joblib>=1.5,<2.0
 faiss-cpu>=1.12,<2.0
 torch>=2.10,<3.0
 transformers>=4.57,<5.0
+sentencepiece>=0.2,<1.0
 httpx>=0.28,<1.0

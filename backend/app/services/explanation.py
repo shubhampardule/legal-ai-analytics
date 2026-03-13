@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-import numpy as np
+import re
+from collections import defaultdict
 
 from ..config import DEFAULT_TOP_K_SENTENCES, DEFAULT_TOP_K_TERMS
 from .prediction import PredictionArtifacts, PredictionService
 from .text_processing import extract_sentences
+
+
+TERM_RE = re.compile(r"\b[a-z]{3,}\b", re.IGNORECASE)
+STOPWORDS = {
+    "the", "and", "for", "that", "with", "this", "from", "was", "were", "are", "has", "have",
+    "had", "his", "her", "its", "their", "into", "upon", "while", "where", "when", "which", "shall",
+    "would", "could", "should", "there", "here", "also", "such", "than", "then", "been", "being", "case",
+    "court", "petitioner", "respondent", "appellant", "appeal", "judgment", "order", "section", "article",
+}
 
 
 class ExplanationService:
@@ -19,17 +29,14 @@ class ExplanationService:
         top_k_terms: int = DEFAULT_TOP_K_TERMS,
         top_k_sentences: int = DEFAULT_TOP_K_SENTENCES,
     ) -> dict[str, object]:
-        coefficients = self.prediction_service.model.coef_[0]
-        top_terms = self._build_term_contributions(
-            row_vector=prediction.row_vector[0],
-            coefficients=coefficients,
-            top_k=top_k_terms,
-        )
         sentence_evidence = self._build_sentence_evidence(
             model_text=prediction.model_text,
-            coefficients=coefficients,
             predicted_label_id=prediction.predicted_label_id,
             top_k=top_k_sentences,
+        )
+        top_terms = self._build_term_contributions(
+            sentence_evidence=sentence_evidence,
+            top_k=top_k_terms,
         )
 
         return {
@@ -45,38 +52,52 @@ class ExplanationService:
 
     def _build_term_contributions(
         self,
-        row_vector,
-        coefficients: np.ndarray,
+        sentence_evidence: dict[str, object],
         top_k: int,
     ) -> dict[str, list[dict[str, object]]]:
-        feature_names = self.prediction_service.vectorizer.get_feature_names_out()
-        records = []
-        for feature_idx, tfidf_value in zip(row_vector.indices, row_vector.data):
-            coefficient = float(coefficients[feature_idx])
-            contribution = float(tfidf_value * coefficient)
-            records.append(
-                {
-                    "term": feature_names[feature_idx],
-                    "tfidf_value": round(float(tfidf_value), 6),
-                    "coefficient": round(coefficient, 6),
-                    "contribution": round(contribution, 6),
-                }
-            )
+        supporting = sentence_evidence.get("supporting", [])
+        opposing = sentence_evidence.get("opposing", [])
+
+        accepted_weights: dict[str, float] = defaultdict(float)
+        accepted_counts: dict[str, int] = defaultdict(int)
+        rejected_weights: dict[str, float] = defaultdict(float)
+        rejected_counts: dict[str, int] = defaultdict(int)
+
+        for sentence in supporting:
+            sentence_text = str(sentence.get("text", ""))
+            score = float(sentence.get("accepted_evidence", 0.0))
+            for term in TERM_RE.findall(sentence_text.lower()):
+                if term in STOPWORDS:
+                    continue
+                accepted_weights[term] += score
+                accepted_counts[term] += 1
+
+        for sentence in opposing:
+            sentence_text = str(sentence.get("text", ""))
+            score = float(sentence.get("rejected_evidence", 0.0))
+            for term in TERM_RE.findall(sentence_text.lower()):
+                if term in STOPWORDS:
+                    continue
+                rejected_weights[term] += score
+                rejected_counts[term] += 1
 
         accepted_terms = [
-            item
-            for item in sorted(records, key=lambda record: record["contribution"], reverse=True)
-            if item["contribution"] > 0
-        ][:top_k]
+            {
+                "term": term,
+                "contribution": round(weight, 6),
+                "frequency": int(accepted_counts[term]),
+            }
+            for term, weight in sorted(accepted_weights.items(), key=lambda item: item[1], reverse=True)[:top_k]
+        ]
 
         rejected_terms = [
             {
-                **item,
-                "contribution": round(abs(float(item["contribution"])), 6),
+                "term": term,
+                "contribution": round(weight, 6),
+                "frequency": int(rejected_counts[term]),
             }
-            for item in sorted(records, key=lambda record: record["contribution"])
-            if item["contribution"] < 0
-        ][:top_k]
+            for term, weight in sorted(rejected_weights.items(), key=lambda item: item[1], reverse=True)[:top_k]
+        ]
 
         return {
             "accepted": accepted_terms,
@@ -86,7 +107,6 @@ class ExplanationService:
     def _build_sentence_evidence(
         self,
         model_text: str,
-        coefficients: np.ndarray,
         predicted_label_id: int,
         top_k: int,
     ) -> dict[str, object]:
@@ -98,21 +118,17 @@ class ExplanationService:
                 "sentence_count": 0,
             }
 
-        sentence_texts = [sentence["text"] for sentence in sentences]
-        sentence_matrix = self.prediction_service.vectorizer.transform(sentence_texts)
-        accepted_coefficients = np.clip(coefficients, a_min=0.0, a_max=None)
-        rejected_coefficients = np.clip(-coefficients, a_min=0.0, a_max=None)
-
-        accepted_scores = np.asarray(sentence_matrix @ accepted_coefficients).ravel()
-        rejected_scores = np.asarray(sentence_matrix @ rejected_coefficients).ravel()
+        trimmed_sentences = sentences[:120]
+        sentence_texts = [sentence["text"] for sentence in trimmed_sentences]
+        sentence_scores = self.prediction_service.score_texts_for_outcome(sentence_texts)
 
         enriched = []
-        for index, sentence in enumerate(sentences):
+        for index, sentence in enumerate(trimmed_sentences):
             enriched.append(
                 {
                     **sentence,
-                    "accepted_evidence": round(float(accepted_scores[index]), 6),
-                    "rejected_evidence": round(float(rejected_scores[index]), 6),
+                    "accepted_evidence": round(float(sentence_scores[index]["accepted"]), 6),
+                    "rejected_evidence": round(float(sentence_scores[index]["rejected"]), 6),
                 }
             )
 
@@ -133,5 +149,5 @@ class ExplanationService:
         return {
             "supporting": supporting,
             "opposing": opposing,
-            "sentence_count": len(sentences),
+            "sentence_count": len(trimmed_sentences),
         }
