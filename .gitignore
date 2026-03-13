@@ -19,3 +19,7 @@ artifacts/
 
 .DS_Store
 Thumbs.db
+
+# Temporary/debug files
+temp*
+**/*temp*
