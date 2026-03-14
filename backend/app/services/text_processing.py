@@ -101,11 +101,15 @@ def _get_judge_ner_pipeline():
     if not AI_JUDGE_EXTRACTION_ENABLED:
         return None
     try:
+        import torch
+        if not torch.cuda.is_available():
+            raise RuntimeError("GPU ONLY MODE: No CUDA device found! This project is configured to run ONLY on a GPU.")
         return pipeline(
             "token-classification",
             model=AI_JUDGE_NER_MODEL,
             tokenizer=AI_JUDGE_NER_MODEL,
             aggregation_strategy="simple",
+            device=0,
         )
     except Exception:
         return None
