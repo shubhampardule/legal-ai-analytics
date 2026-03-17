@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FileText, Hash, Play, Trash2, Terminal, ChevronDown, ChevronUp } from "lucide-react";
+import { useRef, useState } from "react";
+import { FileText, Hash, Play, Trash2, Terminal, ChevronDown, ChevronUp, Upload } from "lucide-react";
 
 function TabButton({ active, label, icon: Icon, onClick }) {
   return (
@@ -37,6 +37,22 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
   const displayedHistory = history ? (showAllHistory ? history : history.slice(0, 3)) : [];
   const textChars = textValue.length;
   const canAnalyze = isTextMode ? textValue.trim().length > 0 : caseIdValue.trim().length > 0;
+  const fileInputRef = useRef(null);
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result;
+      if (typeof text === 'string') {
+        setTextValue(text);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  };
 
   function getCharCountStatus(chars) {
     if (chars === 0) return { color: "text-[var(--color-text-tertiary)]", label: "0 chars" };
@@ -74,9 +90,26 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
       {isTextMode ? (
         <div className="mt-6 flex flex-col h-[320px]">
           <div className="flex items-center justify-between mb-2 px-1">
-            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
-              Document Content
-            </label>
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
+                Document Content
+              </label>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload custom text file (.txt)"
+                className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Upload File
+              </button>
+              <input
+                type="file"
+                accept=".txt"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+              />
+            </div>
             <span className={`font-mono text-xs ${charStatus.color}`}>{charStatus.label}</span>
           </div>
           <textarea
