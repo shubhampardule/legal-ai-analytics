@@ -40,8 +40,9 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
 
   function getCharCountStatus(chars) {
     if (chars === 0) return { color: "text-[var(--color-text-tertiary)]", label: "0 chars" };
+    if (chars < 500) return { color: "text-[var(--color-status-rejected-text)]", label: `${chars.toLocaleString()} chars (Too short)` };
     if (chars > 400000) return { color: "text-amber-600", label: `${chars.toLocaleString()} chars (Very long)` };
-    return { color: "text-[var(--color-status-accepted-text)]", label: `${chars.toLocaleString()} chars` };
+    return { color: "text-[var(--color-status-accepted-text)]", label: `${chars.toLocaleString()} chars (Optimal)` };
   }
 
   const charStatus = getCharCountStatus(textChars);
@@ -58,7 +59,7 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
       <div className="grid grid-cols-2 gap-2 p-1 bg-[var(--color-surface-elevated)] rounded-xl border border-[var(--color-border-subtle)]">
         <TabButton
           active={isTextMode}
-          label="Search / Text"
+          label="Custom Document"
           icon={FileText}
           onClick={() => setInputMode("text")}
         />
@@ -74,14 +75,14 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
         <div className="mt-6 flex flex-col h-[320px]">
           <div className="flex items-center justify-between mb-2 px-1">
             <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
-              Search Query or Case Text
+              Document Content
             </label>
             <span className={`font-mono text-xs ${charStatus.color}`}>{charStatus.label}</span>
           </div>
           <textarea
             value={textValue}
             onChange={(event) => setTextValue(event.target.value)}
-            placeholder="Type a legal query (e.g. 'property disputes'), factual summary, or paste full judgment text..."
+            placeholder="Paste judgment text or factual summary here..."
             className="flex-1 w-full resize-none rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-base)] px-4 py-4 text-sm leading-relaxed text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)] transition-colors focus:border-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-text-primary)]"
           />
         </div>
@@ -201,7 +202,7 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
           ) : (
             <Play className="h-4 w-4 fill-current" />
           )}
-            {isLoading ? "Processing..." : (isTextMode && textChars > 0 && textChars < 300 ? "Search Database" : "Run Analysis")}
+          {isLoading ? "Processing..." : "Run Analysis"}
         </button>
       </div>
     </section>
