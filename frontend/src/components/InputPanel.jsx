@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FileText, Hash, Play, Trash2, Terminal, ChevronDown, ChevronUp, Upload } from "lucide-react";
+import { FileText, Hash, Play, Trash2, Terminal, ChevronDown, ChevronUp, Upload, Search } from "lucide-react";
 
 function TabButton({ active, label, icon: Icon, onClick }) {
   return (
@@ -25,6 +25,8 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
   setTextValue,
   caseIdValue,
   setCaseIdValue,
+  searchValue,
+  setSearchValue,
   isLoading,
   errorMessage,
   sampleCases,
@@ -33,10 +35,11 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
   onSampleSelect,
 }) {
   const isTextMode = inputMode === "text";
+  const isSearchMode = inputMode === "search";
   const [showAllHistory, setShowAllHistory] = useState(false);
   const displayedHistory = history ? (showAllHistory ? history : history.slice(0, 3)) : [];
   const textChars = textValue.length;
-  const canAnalyze = isTextMode ? textValue.trim().length > 0 : caseIdValue.trim().length > 0;
+  const canAnalyze = isTextMode ? textValue.trim().length > 0 : (isSearchMode ? searchValue?.trim().length > 0 : caseIdValue.trim().length > 0);
   const fileInputRef = useRef(null);
 
   const handleFileUpload = (event) => {
@@ -72,18 +75,24 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
         </h2>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 p-1 bg-[var(--color-surface-elevated)] rounded-xl border border-[var(--color-border-subtle)]">
+      <div className="grid grid-cols-3 gap-2 p-1 bg-[var(--color-surface-elevated)] rounded-xl border border-[var(--color-border-subtle)]">
         <TabButton
           active={isTextMode}
-          label="Custom Document"
+          label="Document"
           icon={FileText}
           onClick={() => setInputMode("text")}
         />
         <TabButton
-          active={!isTextMode}
+          active={inputMode === "caseId"}
           label="Case ID"
           icon={Hash}
           onClick={() => setInputMode("caseId")}
+        />
+        <TabButton
+          active={isSearchMode}
+          label="Topic Search"
+          icon={Search}
+          onClick={() => setInputMode("search")}
         />
       </div>
 
@@ -118,6 +127,23 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
             placeholder="Paste judgment text or factual summary here..."
             className="flex-1 w-full resize-none rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-base)] px-4 py-4 text-sm leading-relaxed text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)] transition-colors focus:border-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-text-primary)]"
           />
+        </div>
+      ) : isSearchMode ? (
+        <div className="mt-6 flex flex-col h-[320px]">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
+              Search Query
+            </label>
+          </div>
+          <textarea
+            value={searchValue || ""}
+            onChange={(event) => setSearchValue(event.target.value)}
+            placeholder="e.g., property disputes, contract breach, murder appeals..."
+            className="flex-1 w-full resize-none rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-base)] px-4 py-4 text-sm leading-relaxed text-[var(--color-text-primary)] placeholder-[var(--color-text-tertiary)] transition-colors focus:border-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--color-text-primary)]"
+          />
+          <div className="mt-3 px-1 text-xs text-[var(--color-text-tertiary)]">
+            Powered by semantic embedding search. Describe the legal situation in natural language to find historically relevant cases.
+          </div>
         </div>
       ) : (
         <div className="mt-6 min-h-[320px] flex flex-col">
@@ -232,10 +258,12 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75"></span>
                 <span className="relative inline-flex h-4 w-4 rounded-full bg-white opacity-90"></span>
              </span>
+          ) : isSearchMode ? (
+            <Search className="h-4 w-4" />
           ) : (
             <Play className="h-4 w-4 fill-current" />
           )}
-          {isLoading ? "Processing..." : "Run Analysis"}
+          {isLoading ? (isSearchMode ? "Searching..." : "Processing...") : (isSearchMode ? "Search Cases" : "Run Analysis")}
         </button>
       </div>
     </section>

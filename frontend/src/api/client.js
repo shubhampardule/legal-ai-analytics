@@ -36,6 +36,17 @@ export async function analyzeCase(payload) {
   return parseEnvelope(response);
 }
 
+export async function searchSimilarCases(payload) {
+  const response = await fetch(buildUrl(`${API_PREFIX}/similar-cases`), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseEnvelope(response);
+}
+
 export async function chatWithCase(payload) {
   const response = await fetch(buildUrl(`${API_PREFIX}/chat-case`), {
     method: "POST",

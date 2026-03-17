@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useRef, useState } from "react";
-import { analyzeCase, fetchHealth, fetchMeta } from "./api/client";
+import { analyzeCase, fetchHealth, fetchMeta, searchSimilarCases } from "./api/client";
 import { AnalysisSummaryCard } from "./components/AnalysisSummaryCard";
 import { AnalyticsCardRow, AnalyticsChartsRow } from "./components/AnalyticsCardRow";
 import { EvidenceSentencesCard } from "./components/EvidenceSentencesCard";
@@ -39,6 +39,7 @@ export default function App() {
   const [inputMode, setInputMode] = useState("caseId"); // Default to caseId for quick samples
   const [textValue, setTextValue] = useState("");
   const [caseIdValue, setCaseIdValue] = useState("1980_211");
+  const [searchValue, setSearchValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
@@ -94,17 +95,34 @@ export default function App() {
       if (inputMode === "text") {
         if (!textValue.trim()) throw new Error("Please enter case text.");
         payload.text = textValue.trim();
-      } else {
+      } else if (inputMode === "caseId") {
         if (!caseIdValue.trim()) throw new Error("Please enter a case ID.");
         payload.case_id = caseIdValue.trim();
+      } else if (inputMode === "search") {
+        if (!searchValue.trim()) throw new Error("Please enter a search query.");
+        payload.text = searchValue.trim();
       }
 
       const startTime = performance.now();
-      const response = await analyzeCase(payload);
+      let response;
+      if (inputMode === "search") {
+        response = await searchSimilarCases(payload);
+      } else {
+        response = await analyzeCase(payload);
+      }
       const endTime = performance.now();
 
       startTransition(() => {
-        const resultData = { ...response.data, _timings: { total_ms: endTime - startTime } };
+        let resultData;
+        if (inputMode === "search") {
+          resultData = { 
+            isSearchOnly: true, 
+            retrieval: response.data.retrieval, 
+            _timings: { total_ms: endTime - startTime } 
+          };
+        } else {
+          resultData = { ...response.data, _timings: { total_ms: endTime - startTime } };
+        }
         setAnalysisResult(resultData);
         
         // Save to history
@@ -112,8 +130,8 @@ export default function App() {
           const entry = {
             id: Date.now().toString(),
             type: inputMode,
-            query: inputMode === "caseId" ? caseIdValue.trim() : textValue.substring(0, 40) + "...",
-            verdict: resultData.prediction?.predicted_label || "unknown",
+            query: inputMode === "caseId" ? caseIdValue.trim() : (inputMode === "search" ? searchValue.trim() : textValue.substring(0, 40) + "..."),
+            verdict: resultData.prediction?.predicted_label || "search",
             timestamp: new Date().toISOString(),
             fullResult: resultData
           };
@@ -148,6 +166,7 @@ export default function App() {
     startTransition(() => {
       setTextValue("");
       setCaseIdValue("");
+      setSearchValue("");
       setErrorMsg(null);
       setAnalysisResult(null);
     });
@@ -164,6 +183,8 @@ export default function App() {
       setInputMode(type);
       if (type === 'text') {
         setTextValue(query);
+      } else if (type === 'search') {
+        setSearchValue(query);
       } else {
         setCaseIdValue(query);
       }
@@ -211,6 +232,8 @@ export default function App() {
                 setTextValue={setTextValue}
                 caseIdValue={caseIdValue}
                 setCaseIdValue={setCaseIdValue}
+                searchValue={searchValue}
+                setSearchValue={setSearchValue}
                 isLoading={isProcessing}
                 errorMessage={errorMsg}
                 sampleCases={SAMPLE_CASES}
@@ -242,62 +265,81 @@ export default function App() {
               </div>
             ) : analysisResult ? (
               <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                 {/* Verdict Dashboard Top */}
-                 <div className="grid gap-6 2xl:grid-cols-3">
-                    <div className="2xl:col-span-2 flex flex-col gap-6">
-                       <PredictionHeroCard prediction={analysisResult.prediction} />
-                       <AnalysisSummaryCard
-                          summary={analysisResult.summary}
-                          prediction={analysisResult.prediction}
-                          explanation={analysisResult.explanation}
-                        />
-                    </div>
-                    <div className="2xl:col-span-1">
-                        <section className="h-full rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-panel)] p-6 shadow-[var(--shadow-sm-subtle)] flex flex-col">
-                          <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-tertiary)]">
-                            Technical Metrics
-                          </p>
-                          <div className="flex-1 min-h-0 min-w-0 space-y-6 overflow-hidden">
-                            <AnalyticsChartsRow {...analysisResult} />
-                            <AnalyticsCardRow {...analysisResult} />
-                          </div>
-                        </section>
-                    </div>
-                 </div>
-
-                 {/* Deep Analysis Evidence row */}
-                 <div className="grid gap-6 2xl:grid-cols-3">
-                    <div className="2xl:col-span-2">
-                       <EvidenceSentencesCard explanation={analysisResult.explanation} onViewDocument={() => setShowSourceDocument(true)} />
-                    </div>
-                    <div className="2xl:col-span-1">
-                       <KeyTermsCard explanation={analysisResult.explanation} />
-                         <div className="mt-6"><EntityExtractionCard entities={analysisResult.entities} /></div>
-                    </div>
-                 </div>
-
-                 {/* Bottom Similar Cases */}
-                 <div className="w-full">
-                    <div className="mb-6">
-                      <CaseChatCard
-                        inputMode={inputMode}
-                        caseIdValue={caseIdValue}
-                        textValue={textValue}
-                        disabled={!analysisResult}
+                 
+                 {analysisResult.isSearchOnly ? (
+                    <div className="w-full">
+                      <SimilarCasesList
+                        retrieval={analysisResult.retrieval}
+                        filters={similarityFilters}
+                        onFilterChange={handleSimilarityFilterChange}
+                        onApplyFilters={() => handleAnalyze()}
+                        onResetFilters={() => {
+                          const resetFilters = { outcome: null, year_from: null, year_to: null };
+                          setSimilarityFilters(resetFilters);
+                          handleAnalyze(resetFilters);
+                        }}
                       />
                     </div>
-                    <SimilarCasesList
-                      retrieval={analysisResult.retrieval}
-                      filters={similarityFilters}
-                      onFilterChange={handleSimilarityFilterChange}
-                      onApplyFilters={() => handleAnalyze()}
-                      onResetFilters={() => {
-                        const resetFilters = { outcome: null, year_from: null, year_to: null };
-                        setSimilarityFilters(resetFilters);
-                        handleAnalyze(resetFilters);
-                      }}
-                    />
-                 </div>
+                 ) : (
+                   <>
+                     {/* Verdict Dashboard Top */}
+                     <div className="grid gap-6 2xl:grid-cols-3">
+                        <div className="2xl:col-span-2 flex flex-col gap-6">
+                           <PredictionHeroCard prediction={analysisResult.prediction} />
+                           <AnalysisSummaryCard
+                              summary={analysisResult.summary}
+                              prediction={analysisResult.prediction}
+                              explanation={analysisResult.explanation}
+                            />
+                        </div>
+                        <div className="2xl:col-span-1">
+                            <section className="h-full rounded-2xl border border-[var(--color-border-subtle)] bg-[var(--color-surface-panel)] p-6 shadow-[var(--shadow-sm-subtle)] flex flex-col">
+                              <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-tertiary)]">
+                                Technical Metrics
+                              </p>
+                              <div className="flex-1 min-h-0 min-w-0 space-y-6 overflow-hidden">
+                                <AnalyticsChartsRow {...analysisResult} />
+                                <AnalyticsCardRow {...analysisResult} />
+                              </div>
+                            </section>
+                        </div>
+                     </div>
+
+                     {/* Deep Analysis Evidence row */}
+                     <div className="grid gap-6 2xl:grid-cols-3">
+                        <div className="2xl:col-span-2">
+                           <EvidenceSentencesCard explanation={analysisResult.explanation} onViewDocument={() => setShowSourceDocument(true)} />
+                        </div>
+                        <div className="2xl:col-span-1">
+                           <KeyTermsCard explanation={analysisResult.explanation} />
+                             <div className="mt-6"><EntityExtractionCard entities={analysisResult.entities} /></div>
+                        </div>
+                     </div>
+
+                     {/* Bottom Similar Cases */}
+                     <div className="w-full">
+                        <div className="mb-6">
+                          <CaseChatCard
+                            inputMode={inputMode}
+                            caseIdValue={caseIdValue}
+                            textValue={textValue}
+                            disabled={!analysisResult}
+                          />
+                        </div>
+                        <SimilarCasesList
+                          retrieval={analysisResult.retrieval}
+                          filters={similarityFilters}
+                          onFilterChange={handleSimilarityFilterChange}
+                          onApplyFilters={() => handleAnalyze()}
+                          onResetFilters={() => {
+                            const resetFilters = { outcome: null, year_from: null, year_to: null };
+                            setSimilarityFilters(resetFilters);
+                            handleAnalyze(resetFilters);
+                          }}
+                        />
+                     </div>
+                   </>
+                 )}
               </div>
             ) : !errorMsg ? (
                <EmptyState />
