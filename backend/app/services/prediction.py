@@ -38,9 +38,14 @@ class PredictionService:
     RELEVANCE_HYPOTHESIS_TEMPLATE = "This candidate legal case is {} to the query case."
 
     def __init__(self) -> None:
-        if not torch.cuda.is_available():
-            raise RuntimeError("GPU ONLY MODE: No CUDA device found! This project is configured to run ONLY on a GPU.")
-        device_index = 0
+        if torch.cuda.is_available():
+            device_index = 0
+            device_name = torch.cuda.get_device_name(0)
+            print(f"[PredictionService] GPU hardware detected: {device_name}. Accelerating with CUDA.")
+        else:
+            device_index = -1
+            print("[PredictionService] WARNING: No compatible GPU found. Falling back to CPU (expect slower performance). Please install CUDA-supported PyTorch.")
+        
         self.model_name = PREDICTION_MODEL_NAME
         self.classifier = pipeline(
             "zero-shot-classification",

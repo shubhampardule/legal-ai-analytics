@@ -66,9 +66,15 @@ class SimilarityService:
         )
         self.tokenizer = self._load_tokenizer()
         self.model = self._load_model()
-        if not torch.cuda.is_available():
-            raise RuntimeError("GPU ONLY MODE: No CUDA device found! This project is configured to run ONLY on a GPU.")
-        self.device = torch.device("cuda")
+        
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+            device_name = torch.cuda.get_device_name(0)
+            print(f"[SimilarityService] GPU hardware detected: {device_name}. Accelerating with CUDA.")
+        else:
+            self.device = torch.device("cpu")
+            print("[SimilarityService] WARNING: No compatible GPU found. Falling back to CPU. Please install CUDA-supported PyTorch.")
+            
         self.model.to(self.device)
         self.model.eval()
         self.prediction_service = prediction_service

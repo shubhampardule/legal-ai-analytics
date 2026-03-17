@@ -102,14 +102,20 @@ def _get_judge_ner_pipeline():
         return None
     try:
         import torch
-        if not torch.cuda.is_available():
-            raise RuntimeError("GPU ONLY MODE: No CUDA device found! This project is configured to run ONLY on a GPU.")
+        if torch.cuda.is_available():
+            device_idx = 0
+            device_name = torch.cuda.get_device_name(0)
+            print(f"[TextProcessing] GPU hardware detected: {device_name}. Accelerating Named Entity Recognition with CUDA.")
+        else:
+            device_idx = -1
+            print("[TextProcessing] WARNING: No compatible GPU found. Falling back to CPU. Please install CUDA-supported PyTorch.")
+
         return pipeline(
             "token-classification",
             model=AI_JUDGE_NER_MODEL,
             tokenizer=AI_JUDGE_NER_MODEL,
             aggregation_strategy="simple",
-            device=0,
+            device=device_idx,
         )
     except Exception:
         return None

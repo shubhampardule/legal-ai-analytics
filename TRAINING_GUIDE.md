@@ -31,6 +31,11 @@ Run from repo root.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# IMPORTANT: Install PyTorch with CUDA support first to ensure GPU acceleration!
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
+# Then install the rest of the requirements
 pip install -r requirements.txt
 ```
 
@@ -55,6 +60,10 @@ Use this for clean machine setup / full rebuild.
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+
+# IMPORTANT: Install PyTorch with CUDA support first to ensure GPU acceleration!
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
 pip install -r requirements.txt
 
 python scripts/preprocess_ildc.py
