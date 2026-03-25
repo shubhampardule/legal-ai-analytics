@@ -100,9 +100,12 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
         <div className="mt-6 flex flex-col h-[320px]">
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
-                Document Content
-              </label>
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
+                <FileText className="h-4 w-4" />
+                <label>
+                  Document Content
+                </label>
+              </div>
               <button
                 onClick={() => fileInputRef.current?.click()}
                 title="Upload custom text file (.txt)"
@@ -131,9 +134,12 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
       ) : isSearchMode ? (
         <div className="mt-6 flex flex-col h-[320px]">
           <div className="flex items-center justify-between mb-2 px-1">
-            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
-              Search Query
-            </label>
+            <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)]">
+              <Search className="h-4 w-4" />
+              <label>
+                Search Query
+              </label>
+            </div>
           </div>
           <textarea
             value={searchValue || ""}
@@ -147,9 +153,12 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
         </div>
       ) : (
         <div className="mt-6 min-h-[320px] flex flex-col">
-          <label className="text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)] mb-2 px-1">
-            Dataset Case ID
-          </label>
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-[var(--color-text-secondary)] mb-2 px-1">
+            <Hash className="h-4 w-4" />
+            <label>
+              Dataset Case ID
+            </label>
+          </div>
           <input
             value={caseIdValue}
             onChange={(event) => setCaseIdValue(event.target.value)}
@@ -181,7 +190,12 @@ export function InputPanel({ history, onRestoreHistory, onClearHistory,
                   >
                     <div className="flex flex-col flex-1 min-w-0 pr-2">
                        <span className="truncate max-w-[200px] font-mono">{entry.query}</span>
-                       <span className="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wider">{new Date(entry.timestamp).toLocaleDateString()} &bull; {entry.type}</span>
+                       <span className="flex items-center gap-1 mt-0.5 text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                         {new Date(entry.timestamp).toLocaleDateString()} &bull; 
+                         {entry.type === 'text' && <><FileText className="w-3 h-3" /> Document</>}
+                         {entry.type === 'caseId' && <><Hash className="w-3 h-3" /> Case ID</>}
+                         {entry.type === 'search' && <><Search className="w-3 h-3" /> Topic Search</>}
+                       </span>
                     </div>
                     <div className={`shrink-0 w-2 h-2 rounded-full ${entry.verdict === "accepted" ? "bg-[var(--color-status-accepted-text)]" : entry.verdict === "rejected" ? "bg-[var(--color-status-rejected-text)]" : "bg-gray-400"}`}></div>
                   </button>
