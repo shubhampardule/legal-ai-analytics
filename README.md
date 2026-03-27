@@ -11,7 +11,20 @@ Explainable legal case analytics web app for:
 > ⚠️ **Research prototype only** — not legal advice.
 
 ---
+## Screenshots
 
+<table align="center">
+  <tr>
+    <td align="center"><img src="Images/Legal1.png" alt="Screenshot 1"></td>
+    <td align="center"><img src="Images/Legal2.png" alt="Screenshot 2"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="Images/Legal3.png" alt="Screenshot 3"></td>
+    <td align="center"><img src="Images/Legal4.png" alt="Screenshot 4"></td>
+  </tr>
+</table>
+
+---
 ## Table of Contents
 
 1. [What this project does](#what-this-project-does)
